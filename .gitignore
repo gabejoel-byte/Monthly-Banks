@@ -1,0 +1,16 @@
+# Real financial data -- never commit this. It lives only on your machine.
+data/
+Assets/
+seed/*.csv
+
+# Local dev environment
+.venv/
+__pycache__/
+*.pyc
+.claude/
+
+# Logs
+*.log
+
+# Streamlit local-only files
+.streamlit/secrets.toml
