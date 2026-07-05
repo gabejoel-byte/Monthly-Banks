@@ -8,10 +8,11 @@ import streamlit as st
 
 from bootstrap import get_ready_conn
 from core import categorize, db
-from ui_helpers import apply_mobile_css, confirm_all, render_category_table
+from ui_helpers import apply_mobile_css, confirm_all, render_category_table, require_password
 
 st.set_page_config(page_title="Review & Completeness", page_icon="\U0001F50D", layout="wide")
 apply_mobile_css()
+require_password()
 conn = get_ready_conn()
 
 st.title("Review & Completeness")

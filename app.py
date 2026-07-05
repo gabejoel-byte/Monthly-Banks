@@ -4,10 +4,11 @@ import streamlit as st
 
 from bootstrap import get_ready_conn
 from core import calculations, commentary, db
-from ui_helpers import apply_mobile_css
+from ui_helpers import apply_mobile_css, require_password
 
 st.set_page_config(page_title="Monthly Banks P&L Tracker", page_icon="\U0001F4CA", layout="wide")
 apply_mobile_css()
+require_password()
 
 conn = get_ready_conn()
 

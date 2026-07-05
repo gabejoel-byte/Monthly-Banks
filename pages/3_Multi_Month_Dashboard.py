@@ -9,10 +9,11 @@ import streamlit as st
 
 from bootstrap import get_ready_conn
 from core import calculations, db
-from ui_helpers import CATEGORY_COLORS, ENTITY_COLORS, apply_mobile_css
+from ui_helpers import CATEGORY_COLORS, ENTITY_COLORS, apply_mobile_css, require_password
 
 st.set_page_config(page_title="Multi-Month Dashboard", page_icon="\U0001F4C8", layout="wide")
 apply_mobile_css()
+require_password()
 conn = get_ready_conn()
 
 st.title("Multi-Month Dashboard")

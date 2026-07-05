@@ -8,10 +8,11 @@ import streamlit as st
 
 from bootstrap import get_ready_conn
 from core import categorize, db
-from ui_helpers import apply_mobile_css
+from ui_helpers import apply_mobile_css, require_password
 
 st.set_page_config(page_title="Category Rules & Settings", page_icon="\U0001F6E0\U0000FE0F", layout="wide")
 apply_mobile_css()
+require_password()
 conn = get_ready_conn()
 
 st.title("Category Rules & Settings")

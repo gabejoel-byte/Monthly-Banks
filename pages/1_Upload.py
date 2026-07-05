@@ -9,10 +9,11 @@ import streamlit as st
 
 from bootstrap import get_ready_conn
 from core import account_parser, categorize, db, formats, parser
-from ui_helpers import apply_mobile_css, render_category_table
+from ui_helpers import apply_mobile_css, render_category_table, require_password
 
 st.set_page_config(page_title="Upload", page_icon="\U0001F4E4", layout="wide")
 apply_mobile_css()
+require_password()
 conn = get_ready_conn()
 
 

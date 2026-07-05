@@ -25,6 +25,23 @@ on your machine only; a fresh clone needs its own `Assets/*.xlsx` workbooks (or
 `seed/*.csv` files) before `import_history.py`/`import_transactions.py` will
 have anything to import.
 
+## Deploying it (e.g. Streamlit Community Cloud)
+
+This is a stateful Streamlit server, not a serverless function — it needs a
+host that runs a persistent process (Streamlit Community Cloud, Render,
+Railway, Fly.io, a container on Cloud Run, etc.), **not** Vercel/Netlify-style
+platforms.
+
+A deployed copy starts with an empty database (its own separate `data/banks.db`,
+since the real one is gitignored) — treat your local machine as the source of
+truth and the deployed copy as an on-the-go convenience, unless you deliberately
+want to migrate fully.
+
+Since a public deployment has no login by default, this app supports an
+optional password gate: set a Streamlit secret named `app_password` (see
+`.streamlit/secrets.toml.example`) and every page requires it before loading.
+Locally, with no secret configured, there's no login screen at all.
+
 ## Pages
 
 - **Upload** — for a chosen month (defaults to the current one), a checklist of

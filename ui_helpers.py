@@ -17,6 +17,33 @@ import streamlit as st
 
 from core import categorize
 
+
+def require_password() -> None:
+    """Gates the whole app behind a shared password, but only when one is
+    configured via st.secrets["app_password"] (e.g. on a public deployment).
+    Running locally with no secrets.toml skips the gate entirely, so local
+    dev on your own machine/network stays frictionless. Call this once at
+    the very top of every page, right after st.set_page_config."""
+    try:
+        expected = st.secrets.get("app_password")
+    except Exception:
+        expected = None
+    if not expected:
+        return
+    if st.session_state.get("authenticated"):
+        return
+
+    st.title("Monthly Banks P&L Tracker")
+    entered = st.text_input("Password", type="password", key="password_gate_input")
+    if st.button("Unlock", key="password_gate_button"):
+        if entered == expected:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Wrong password.")
+    st.stop()
+
+
 # Fixed identity colors for the charts on the dashboard pages (validated
 # categorical palette -- see .streamlit/config.toml for the matching app theme).
 # Mapped by entity, not by plot position, so a series keeps its color no matter

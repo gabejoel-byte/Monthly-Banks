@@ -8,10 +8,11 @@ import streamlit as st
 
 from bootstrap import get_ready_conn
 from core import categorize, db
-from ui_helpers import apply_mobile_css, render_category_table, save_changed
+from ui_helpers import apply_mobile_css, render_category_table, require_password, save_changed
 
 st.set_page_config(page_title="All Transactions", page_icon="\U0001F4CB", layout="wide")
 apply_mobile_css()
+require_password()
 conn = get_ready_conn()
 
 st.title("All Transactions")
