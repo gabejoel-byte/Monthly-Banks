@@ -2,6 +2,7 @@
 data/
 Assets/
 seed/*.csv
+category_reference.json
 
 # Local dev environment
 .venv/
