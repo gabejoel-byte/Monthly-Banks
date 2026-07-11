@@ -78,6 +78,20 @@ CREATE TABLE IF NOT EXISTS transactions (
     match_method TEXT NOT NULL DEFAULT 'manual'
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_account_month ON transactions(account_id, month);
+
+-- Description -> category rules for the raw bank-download import path
+-- (core/txn_categorize.py). Native download files carry no category column, so
+-- categorization is driven by the transaction description instead of a workbook
+-- category label. priority: 1 = manual override, 10 = reference (the user's own
+-- prior categorizations), 50 = learned from a Capital One category hint.
+CREATE TABLE IF NOT EXISTS category_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL REFERENCES categories(canonical_name),
+    priority INTEGER NOT NULL DEFAULT 100,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_category_rules_priority ON category_rules(priority);
 """
 
 
@@ -384,3 +398,33 @@ def rollup_entries_for_month_currency(conn: sqlite3.Connection, month: str, curr
          "needs_review": 0, "match_method": "rollup"}
         for cat in all_categories
     ])
+
+
+# ---------------------------------------------------------------------------
+# Description -> category rules (raw bank-download import path)
+# ---------------------------------------------------------------------------
+
+def list_category_rules(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM category_rules ORDER BY priority ASC, id ASC"
+    ).fetchall()
+
+
+def upsert_category_rule(conn: sqlite3.Connection, pattern: str, category: str, priority: int) -> None:
+    """Insert or update one description->category rule. Lower priority wins."""
+    pattern = pattern.strip().lower()
+    if not pattern:
+        return
+    conn.execute(
+        """
+        INSERT INTO category_rules (pattern, category, priority) VALUES (?, ?, ?)
+        ON CONFLICT(pattern) DO UPDATE SET category = excluded.category, priority = excluded.priority
+        """,
+        (pattern, category, priority),
+    )
+    conn.commit()
+
+
+def delete_category_rule(conn: sqlite3.Connection, rule_id: int) -> None:
+    conn.execute("DELETE FROM category_rules WHERE id = ?", (rule_id,))
+    conn.commit()

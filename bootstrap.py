@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from core import accounts, categorize, db
+from core import accounts, categorize, db, txn_categorize
 
 
 @st.cache_resource
@@ -11,4 +11,5 @@ def get_ready_conn():
     db.init_db(conn)
     categorize.ensure_seeded(conn)
     accounts.ensure_seeded(conn)
+    txn_categorize.seed_reference_rules(conn)
     return conn

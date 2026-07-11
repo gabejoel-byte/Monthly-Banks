@@ -44,10 +44,18 @@ Locally, with no secret configured, there's no login screen at all.
 
 ## Pages
 
-- **Upload** — for a chosen month (defaults to the current one), a checklist of
-  every real bank/credit-card account with a per-account file uploader and a
-  live NIS/USD/combined total as you go. An "Advanced" section still supports
-  the older single combined category-summary CSV/XLSX upload.
+- **Upload** — two ways in:
+    - **Import raw bank downloads (auto-detect)** — drop the banks' own export
+      files (Capital One CSVs, Bank Yahav עו״ש `.xls`, Isracard/Amex `.xlsx`) and
+      they're detected, categorized from each transaction's description, and
+      filed to the right account automatically. A file can span several months;
+      every month it covers is updated. New accounts are created on the fly for
+      cards/accounts not seen before.
+    - **Per-account monthly checklist** — for a chosen month (defaults to the
+      current one), a checklist of every real bank/credit-card account with a
+      per-account uploader for the pre-totaled monthly workbooks and a live
+      NIS/USD/combined total as you go. An "Advanced" section still supports the
+      older single combined category-summary CSV/XLSX upload.
 - **Monthly Dashboard** — one month's full P&L: Private/Chevra/USA breakdown,
   category chart, and auto-generated commentary vs the prior month.
 - **Multi-Month Dashboard** — trends, YTD totals, and monthly averages across
@@ -69,6 +77,16 @@ confirm them.
 
 - `core/` — parsing, categorization, calculations, and commentary logic (no
   Streamlit dependency; can be tested standalone).
+    - `core/bank_downloads/` — format-sniffing parsers for the banks' own native
+      export files (Capital One CSV, Bank Yahav `.xls`, Isracard/Amex `.xlsx`),
+      merged in from the former standalone "Monthly Banks 1" app.
+    - `core/txn_categorize.py` — description-based categorization for those
+      files (they carry no category column), driven by a `category_rules` table
+      seeded from `category_reference.json` plus a few Hebrew/English fallback
+      rules.
+    - `core/bank_ingest.py` — maps parsed native transactions into the app's
+      account/transaction model (currency, sign, account matching, month
+      bucketing) for the auto-detect Upload path.
 - `ui_helpers.py` — shared Streamlit widgets (the "editable category table"
   pattern used on Upload/Review/All Transactions) and the chart color palette.
 - `pages/` — the Streamlit UI.

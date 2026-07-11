@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from bootstrap import get_ready_conn
-from core import account_parser, categorize, db, formats, parser
+from core import account_parser, bank_ingest, categorize, db, formats, parser, txn_categorize
 from ui_helpers import apply_mobile_css, render_category_table, require_password
 
 st.set_page_config(page_title="Upload", page_icon="\U0001F4E4", layout="wide")
@@ -159,6 +159,120 @@ def render_account_upload(acc_row: dict, month: str) -> None:
         del st.session_state[state_key]
         st.rerun()
 
+
+def render_native_import(conn) -> None:
+    """Auto-detecting import path for the banks' own native download files
+    (Capital One CSV, Bank Yahav .xls, Isracard/Amex .xlsx). Unlike the
+    per-account workbook path above, one file can span several months and its
+    account is detected from the file itself."""
+    st.caption(
+        "Drop the banks' own export files here — Capital One CSVs, Bank Yahav "
+        "עו\"ש .xls, and Isracard / Amex .xlsx. Each file is detected, categorized "
+        "from the transaction descriptions, and filed to the right account "
+        "automatically. A file can cover several months; every month it spans is "
+        "updated. This is the fastest way in — the per-account checklist below is "
+        "the alternative for the pre-totaled monthly workbooks."
+    )
+    uploaded = st.file_uploader(
+        "Bank download files (CSV / XLS / XLSX) — you can drop several at once",
+        type=["csv", "xlsx", "xls"], accept_multiple_files=True,
+        key="native_import_files",
+    )
+    if not uploaded:
+        return
+
+    sig = "::".join(f"{f.name}:{f.size}" for f in uploaded)
+    state_key = f"native_preview::{sig}"
+    if state_key not in st.session_state:
+        files = [(f.name, f.getvalue()) for f in uploaded]
+        st.session_state[state_key] = bank_ingest.preview(conn, files)
+    pv = st.session_state[state_key]
+
+    for s in pv["file_summaries"]:
+        if s["status"] == "ok":
+            lo, hi = s["date_range"]
+            st.write(f"✅ **{s['filename']}** → {s['account_label']} · {s['count']} txns · {lo} → {hi}")
+        elif s["status"] == "empty":
+            st.write(f"➖ **{s['filename']}** → recognized but no transaction rows found")
+        else:
+            st.write(f"⚠️ **{s['filename']}** → {s['status']}: {s.get('detail', '')}")
+
+    if pv["n_transactions"] == 0:
+        st.warning("Nothing to import from these files.")
+        return
+
+    months = pv["months"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Transactions", pv["n_transactions"])
+    c2.metric("Need a category", pv["n_uncategorized"])
+    c3.metric("Months covered", f"{months[0]} → {months[-1]}" if months else "—")
+
+    if pv["n_new_accounts"]:
+        new_labels = sorted({r["account"] for r in pv["rows"] if r["is_new_account"]})
+        st.info(
+            f"{pv['n_new_accounts']} new account(s) will be created from these files:\n\n"
+            + "\n".join(f"- {lbl}" for lbl in new_labels)
+        )
+    st.warning(
+        "Importing **replaces** each covered account's existing data for every "
+        "month these files span, so re-importing is safe and never double-counts. "
+        "Any month you've already finalized from the monthly workbooks will be "
+        "overwritten with this per-transaction data."
+    )
+
+    # Let the user fix the un-categorized rows before import; confident matches
+    # import as-is and are still correctable later on the Review page.
+    flagged_idx = [i for i, r in enumerate(pv["rows"]) if r["needs_review"]]
+    edits: dict[int, str] = {}
+    if flagged_idx:
+        st.markdown(
+            f"**{len(flagged_idx)} transaction(s) couldn't be auto-categorized** — "
+            "set a category below (or leave them as Miscellaneous, flagged for review):"
+        )
+        flagged_df = pd.DataFrame([{
+            "date": pv["rows"][i]["date"],
+            "account": pv["rows"][i]["account"],
+            "description": pv["rows"][i]["description"],
+            "amount": pv["rows"][i]["amount"],
+            "category": pv["rows"][i]["category"],
+        } for i in flagged_idx])
+        edited = render_category_table(
+            flagged_df, "category", categorize.canonical_names(conn),
+            key=f"native_editor::{state_key}",
+            disabled=["date", "account", "description", "amount"],
+            required=False,
+        )
+        for pos, i in enumerate(flagged_idx):
+            val = edited.loc[pos, "category"]
+            if val and not (isinstance(val, float) and pd.isna(val)):
+                edits[i] = val
+
+    if st.button("Import all transactions", type="primary", key=f"native_import_btn::{state_key}"):
+        rows = [dict(r) for r in pv["rows"]]
+        for i, val in edits.items():
+            if val != rows[i]["suggested_category"]:
+                # user chose a category for an unmatched row -- trust it and
+                # remember it for future imports of the same merchant.
+                txn_categorize.learn_merchant_rule(conn, rows[i]["description"], val, priority=1)
+                rows[i]["needs_review"] = 0
+                rows[i]["match_method"] = "manual"
+            rows[i]["category"] = val
+        summary = bank_ingest.commit(conn, rows)
+        st.success(
+            f"Imported {summary['n_transactions']} transactions across "
+            f"{summary['n_accounts']} account(s), months {summary['months'][0]}–{summary['months'][-1]}. "
+            "See the Monthly Dashboard, or the Review page for anything still flagged."
+        )
+        del st.session_state[state_key]
+        st.rerun()
+
+
+st.markdown("### ⚡ Import raw bank downloads (auto-detect)")
+with st.expander("Upload the banks' own CSV / XLS / XLSX export files", expanded=False):
+    render_native_import(conn)
+
+st.markdown("---")
+st.markdown("### 📋 Per-account monthly checklist")
 
 for currency, label in (("NIS", "Israel / NIS accounts"), ("USD", "USA / USD accounts")):
     st.markdown(f"### {label}")
