@@ -68,6 +68,13 @@ Locally, with no secret configured, there's no login screen at all.
 - **All Transactions** — browse the full transaction ledger, filterable to all
   accounts or specific ones, with a converted-to-NIS column and inline
   per-month exchange-rate calibration.
+- **Cash Flow** — one month's money-in vs money-out, in three tabs: Shekels
+  (NIS), Dollars (USD), and Combined. The Combined tab converts USD → NIS at
+  that month's exchange rate, which you calibrate right there.
+- **Fixed / Variable Expenses** — each month's spending split by cost behavior
+  (fixed / variable / semivariable), combined across currencies, with a
+  per-month category breakdown. Which category is which is editable on the
+  Category Rules page (`expense_type`).
 
 The app remembers each account's file layout and category-column position
 after the first upload, and learns category-label spelling variants as you

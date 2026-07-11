@@ -19,10 +19,15 @@ st.title("Category Rules & Settings")
 
 st.markdown("### Category classification")
 st.caption(
-    "Every category feeds one P&L bucket. 'excluded' means transfers/settlements "
-    "left out of all totals; 'charity' is tracked separately from the automatic Tzedaka calc."
+    "Every category feeds one P&L bucket (`group_name`). 'excluded' means "
+    "transfers/settlements left out of all totals; 'charity' is tracked separately "
+    "from the automatic Tzedaka calc. `expense_type` drives the Fixed/Variable/"
+    "Semivariable dashboard — set it to 'none' for anything that isn't a household "
+    "expense you want tracked there (income, transfers, business, etc.)."
 )
-cats = conn.execute("SELECT canonical_name, group_name FROM categories ORDER BY canonical_name").fetchall()
+cats = conn.execute(
+    "SELECT canonical_name, group_name, expense_type FROM categories ORDER BY canonical_name"
+).fetchall()
 cats_df = pd.DataFrame([dict(r) for r in cats])
 edited_cats = st.data_editor(
     cats_df,
@@ -31,13 +36,17 @@ edited_cats = st.data_editor(
     column_config={
         "group_name": st.column_config.SelectboxColumn(
             "group_name", options=["income", "personal", "business", "pension", "charity", "excluded"], required=True,
-        )
+        ),
+        "expense_type": st.column_config.SelectboxColumn(
+            "expense_type", options=categorize.EXPENSE_TYPES, required=True,
+        ),
     },
     key="categories_editor",
 )
 if st.button("Save category classification"):
     for _, row in edited_cats.iterrows():
         categorize.add_category(conn, row["canonical_name"], row["group_name"])
+        categorize.set_expense_type(conn, row["canonical_name"], row["expense_type"])
     st.success("Saved.")
 
 with st.expander("Add a new category"):

@@ -82,6 +82,17 @@ SUPPLEMENTARY_RULES: list[tuple[str, str]] = [
     (r"למשכנתאות|\bmortgage\b", "Mortgage"),
     (r"הפניקס|מנורה", "Insurance"),
     (r"קצבת ילדים", "Private Israel Income"),
+    # --- Israeli merchant / utility patterns added during the merge to cut down
+    #     manual review of Hebrew descriptions. Salary (משכורת) and pension are
+    #     deliberately excluded: which entity (Chevra vs Private) they belong to
+    #     depends on the account, not the description, so they stay manual.
+    (r"הפקדה לפקדון|משיכה מפקדון|פקדון מתחדש|העברה עצמית", "Money Transfer"),
+    (r"ארנונה|עיריית", "Arnona"),
+    (r"חברת החשמל|חשמל למגורים", "Other Utilities"),
+    (r"תאגיד המים|מי שמש|מיתב|הגיחון|מים וביוב", "Water Bill"),
+    (r"סלקום|פרטנר תקשורת|פלאפון|הוט מובייל|גולן טלקום|רמי לוי תקשורת", "Cellular"),
+    (r"שופרסל|רמי לוי|יינות ביתן|אושר עד|טיב טעם|ויקטורי|יוחננוף|מחסני השוק", "Groceries"),
+    (r"סונול|דור אלון|תחנת דלק|פז יבוא", "Gas"),
 ]
 
 

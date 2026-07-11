@@ -148,3 +148,63 @@ def month_report(conn, month: str) -> dict:
 def multi_month_reports(conn, months: list[str] | None = None) -> list[dict]:
     months = months or db.months_present(conn)
     return [month_report(conn, m) for m in months]
+
+
+def _inflow_outflow(amounts: dict[str, float]) -> dict[str, float]:
+    """Split a category->amount map into gross money-in (positive entries) and
+    money-out (negative entries), plus their net."""
+    inflow = sum(a for a in amounts.values() if a > 0)
+    outflow = sum(a for a in amounts.values() if a < 0)
+    return {"inflow": inflow, "outflow": outflow, "net": inflow + outflow}
+
+
+def cashflow_for_month(conn, month: str) -> dict:
+    """Inflow / outflow / net for one month, per currency and combined.
+
+    NIS and USD are each summed in their own currency; 'combined' converts USD to
+    NIS at the month's FX rate before summing (rate is calibratable per month).
+    Each section also carries its category->amount map for a breakdown."""
+    nis = _amounts_by_category(conn, month, "NIS")
+    usd = _amounts_by_category(conn, month, "USD")
+    rate = db.get_fx_rate(conn, month)
+    combined = combined_amounts(nis, usd, rate or 0.0)
+    return {
+        "month": month,
+        "rate": rate,
+        "nis": {"amounts": nis, **_inflow_outflow(nis)},
+        "usd": {"amounts": usd, **_inflow_outflow(usd)},
+        "combined": {"amounts": combined, **_inflow_outflow(combined)},
+    }
+
+
+def expense_type_report(conn, months: list[str] | None = None) -> list[dict]:
+    """Per-month spend split into fixed / variable / semivariable, combined and
+    converted to NIS at each month's FX rate. Expenses are stored as negative
+    amounts, so they're flipped to positive spend magnitudes here. Categories
+    whose expense_type is 'none' (income, transfers, unclassified) are excluded.
+    Each row: {month, rate, buckets:{fixed,variable,semivariable,total},
+               by_category:{fixed:{cat:amt},...}}."""
+    months = months or db.months_present(conn)
+    etypes = {
+        r["canonical_name"]: r["expense_type"]
+        for r in conn.execute("SELECT canonical_name, expense_type FROM categories")
+    }
+    tracked = ("fixed", "variable", "semivariable")
+    out = []
+    for m in months:
+        nis = _amounts_by_category(conn, m, "NIS")
+        usd = _amounts_by_category(conn, m, "USD")
+        rate = db.get_fx_rate(conn, m) or 0.0
+        combined = combined_amounts(nis, usd, rate)
+        buckets = {t: 0.0 for t in tracked}
+        by_category: dict[str, dict[str, float]] = {t: {} for t in tracked}
+        for cat, amount in combined.items():
+            et = etypes.get(cat, "none")
+            if et not in tracked:
+                continue
+            spend = -amount  # expenses are stored negative; show as positive spend
+            buckets[et] += spend
+            by_category[et][cat] = by_category[et].get(cat, 0.0) + spend
+        buckets["total"] = sum(buckets[t] for t in tracked)
+        out.append({"month": m, "rate": rate, "buckets": buckets, "by_category": by_category})
+    return out

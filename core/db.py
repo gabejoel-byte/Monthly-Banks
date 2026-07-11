@@ -6,7 +6,12 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "banks.db"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS categories (
     canonical_name TEXT PRIMARY KEY,
-    group_name TEXT NOT NULL CHECK(group_name IN ('income','personal','business','pension','excluded','charity'))
+    group_name TEXT NOT NULL CHECK(group_name IN ('income','personal','business','pension','excluded','charity')),
+    -- cost behavior for the Fixed/Variable/Semivariable expense dashboard:
+    -- 'fixed' (same each month), 'variable' (discretionary/usage-driven),
+    -- 'semivariable' (a fixed base plus a usage part), or 'none' (not an expense
+    -- tracked in that dashboard, e.g. income/transfers).
+    expense_type TEXT NOT NULL DEFAULT 'none'
 );
 
 CREATE TABLE IF NOT EXISTS category_aliases (
@@ -116,6 +121,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE entries ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
     if "match_method" not in existing:
         conn.execute("ALTER TABLE entries ADD COLUMN match_method TEXT NOT NULL DEFAULT 'manual'")
+    cat_cols = {row["name"] for row in conn.execute("PRAGMA table_info(categories)")}
+    if "expense_type" not in cat_cols:
+        conn.execute("ALTER TABLE categories ADD COLUMN expense_type TEXT NOT NULL DEFAULT 'none'")
 
 
 def months_present(conn: sqlite3.Connection) -> list[str]:

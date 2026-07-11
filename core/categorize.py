@@ -63,6 +63,67 @@ DEFAULT_CATEGORIES: dict[str, str] = {
 
 FUZZY_THRESHOLD = 85
 
+# Cost-behavior classification for the Fixed/Variable/Semivariable expense
+# dashboard. Sensible defaults for the household (personal) categories; anything
+# not listed stays 'none' (income/transfers/business/etc.). Fully editable on the
+# Category Rules page, so these are only the starting point.
+EXPENSE_TYPES = ["fixed", "variable", "semivariable", "none"]
+
+DEFAULT_EXPENSE_TYPES: dict[str, str] = {
+    # Fixed — contractual, roughly the same amount every month
+    "Mortgage": "fixed",
+    "Arnona": "fixed",
+    "Insurance": "fixed",
+    "Internet": "fixed",
+    "Kids & School": "fixed",
+    # Semivariable — a fixed base plus a usage-driven part
+    "Cellular": "semivariable",
+    "House Gas Bill": "semivariable",
+    "Water Bill": "semivariable",
+    "Other Utilities": "semivariable",
+    # Variable — fluctuate with day-to-day choices
+    "Groceries": "variable",
+    "Entertainment": "variable",
+    "Clothing": "variable",
+    "Gas": "variable",
+    "Gifts": "variable",
+    "Health": "variable",
+    "Hobbies": "variable",
+    "Home Improvement": "variable",
+    "Personal Travel": "variable",
+    "Transportation": "variable",
+    "Miscellaneous": "variable",
+}
+
+
+def ensure_expense_types_seeded(conn: sqlite3.Connection) -> None:
+    """Apply the default cost-behavior classification, but only to categories
+    still left at 'none' -- never overrides a value the user has set."""
+    for name, etype in DEFAULT_EXPENSE_TYPES.items():
+        conn.execute(
+            "UPDATE categories SET expense_type = ? "
+            "WHERE canonical_name = ? AND (expense_type IS NULL OR expense_type = 'none')",
+            (etype, name),
+        )
+    conn.commit()
+
+
+def set_expense_type(conn: sqlite3.Connection, canonical_name: str, expense_type: str) -> None:
+    if expense_type not in EXPENSE_TYPES:
+        raise ValueError(f"unknown expense_type: {expense_type}")
+    conn.execute(
+        "UPDATE categories SET expense_type = ? WHERE canonical_name = ?",
+        (expense_type, canonical_name),
+    )
+    conn.commit()
+
+
+def expense_types(conn: sqlite3.Connection) -> dict[str, str]:
+    """canonical_name -> expense_type for every category."""
+    return {r["canonical_name"]: r["expense_type"] for r in conn.execute(
+        "SELECT canonical_name, expense_type FROM categories"
+    )}
+
 
 def normalize(label: str) -> str:
     return re.sub(r"\s+", " ", label.strip().lower())
