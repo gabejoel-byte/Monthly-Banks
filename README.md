@@ -37,6 +37,15 @@ since the real one is gitignored) — treat your local machine as the source of
 truth and the deployed copy as an on-the-go convenience, unless you deliberately
 want to migrate fully.
 
+**Persistent hosted database (so a deployment keeps its data):** most managed
+Streamlit hosts have an ephemeral filesystem, so the local SQLite file doesn't
+survive restarts. Set a `DATABASE_URL` (or `database_url` Streamlit secret)
+pointing at a Postgres database (e.g. a free Neon/Supabase instance) and the app
+uses that instead of the local file — same schema, no code changes. To copy your
+existing local data up once, run `seed/migrate_to_postgres.py` with `DATABASE_URL`
+set (see that file's header). With no `DATABASE_URL`, everything stays on local
+SQLite exactly as before.
+
 Since a public deployment has no login by default, this app supports an
 optional password gate: set a Streamlit secret named `app_password` (see
 `.streamlit/secrets.toml.example`) and every page requires it before loading.

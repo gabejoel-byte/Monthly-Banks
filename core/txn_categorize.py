@@ -113,7 +113,8 @@ def seed_reference_rules(conn: sqlite3.Connection) -> int:
     ]
     if to_insert:
         conn.executemany(
-            "INSERT OR IGNORE INTO category_rules (pattern, category, priority) VALUES (?, ?, ?)",
+            "INSERT INTO category_rules (pattern, category, priority) VALUES (?, ?, ?) "
+            "ON CONFLICT DO NOTHING",
             to_insert,
         )
         conn.commit()
@@ -195,7 +196,8 @@ def learn_merchant_rule(conn: sqlite3.Connection, description: str, category: st
         conn.execute(db_upsert, (pattern, category))
     else:
         conn.execute(
-            "INSERT OR IGNORE INTO category_rules (pattern, category, priority) VALUES (?, ?, ?)",
+            "INSERT INTO category_rules (pattern, category, priority) VALUES (?, ?, ?) "
+            "ON CONFLICT DO NOTHING",
             (pattern, category, priority),
         )
     conn.commit()

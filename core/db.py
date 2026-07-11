@@ -1,9 +1,19 @@
+import os
+import re
 import sqlite3
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "banks.db"
 
-SCHEMA = """
+
+def _database_url() -> str | None:
+    """A Postgres connection string enables the hosted-database backend (used for
+    an always-online deployment where the local filesystem isn't persistent).
+    With none set, the app uses the local SQLite file exactly as before."""
+    return os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+
+
+SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS categories (
     canonical_name TEXT PRIMARY KEY,
     group_name TEXT NOT NULL CHECK(group_name IN ('income','personal','business','pension','excluded','charity')),
@@ -94,13 +104,170 @@ CREATE TABLE IF NOT EXISTS category_rules (
     pattern TEXT NOT NULL UNIQUE,
     category TEXT NOT NULL REFERENCES categories(canonical_name),
     priority INTEGER NOT NULL DEFAULT 100,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_category_rules_priority ON category_rules(priority);
 """
 
+# Postgres mirror of the schema above (SERIAL instead of AUTOINCREMENT, DOUBLE
+# PRECISION for money, TIMESTAMP default). Same table/column names and
+# constraints, so every query in this module runs unchanged on either backend.
+POSTGRES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS categories (
+    canonical_name TEXT PRIMARY KEY,
+    group_name TEXT NOT NULL CHECK(group_name IN ('income','personal','business','pension','excluded','charity')),
+    expense_type TEXT NOT NULL DEFAULT 'none'
+);
 
-def get_conn() -> sqlite3.Connection:
+CREATE TABLE IF NOT EXISTS category_aliases (
+    raw_label TEXT PRIMARY KEY,
+    canonical_name TEXT NOT NULL REFERENCES categories(canonical_name)
+);
+
+CREATE TABLE IF NOT EXISTS entries (
+    id SERIAL PRIMARY KEY,
+    month TEXT NOT NULL,
+    bank_currency TEXT NOT NULL CHECK(bank_currency IN ('NIS','USD')),
+    category_raw TEXT NOT NULL,
+    category_canonical TEXT NOT NULL REFERENCES categories(canonical_name),
+    amount DOUBLE PRECISION NOT NULL,
+    needs_review INTEGER NOT NULL DEFAULT 0,
+    match_method TEXT NOT NULL DEFAULT 'manual',
+    UNIQUE(month, bank_currency, category_canonical)
+);
+
+CREATE TABLE IF NOT EXISTS fx_rates (
+    month TEXT PRIMARY KEY,
+    rate DOUBLE PRECISION NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS format_profiles (
+    signature TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('builtin_single_month','builtin_wide_multi_month','custom_flat')),
+    category_col INTEGER,
+    amount_col INTEGER,
+    currency TEXT CHECK(currency IN ('NIS','USD') OR currency IS NULL),
+    header_rows INTEGER NOT NULL DEFAULT 0,
+    seen_count INTEGER NOT NULL DEFAULT 1,
+    last_used TEXT
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+    id SERIAL PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    currency TEXT NOT NULL CHECK(currency IN ('NIS','USD')),
+    entity TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS account_layouts (
+    account_id INTEGER PRIMARY KEY REFERENCES accounts(id),
+    date_col INTEGER,
+    desc_col INTEGER,
+    amount_mode TEXT NOT NULL CHECK(amount_mode IN ('debit_credit','signed_negate','type_amount')),
+    debit_col INTEGER,
+    credit_col INTEGER,
+    amount_col INTEGER,
+    type_col INTEGER,
+    header_rows INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    month TEXT NOT NULL,
+    txn_date TEXT,
+    description TEXT,
+    amount DOUBLE PRECISION NOT NULL,
+    category_raw TEXT,
+    category_canonical TEXT NOT NULL REFERENCES categories(canonical_name),
+    needs_review INTEGER NOT NULL DEFAULT 0,
+    match_method TEXT NOT NULL DEFAULT 'manual'
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_account_month ON transactions(account_id, month);
+
+CREATE TABLE IF NOT EXISTS category_rules (
+    id SERIAL PRIMARY KEY,
+    pattern TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL REFERENCES categories(canonical_name),
+    priority INTEGER NOT NULL DEFAULT 100,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_category_rules_priority ON category_rules(priority);
+"""
+
+# ---------------------------------------------------------------------------
+# Backend selection: SQLite by default; Postgres when DATABASE_URL is set.
+# The Postgres adapter below makes psycopg2 look like the small slice of the
+# sqlite3 API this module relies on (conn.execute/executemany/executescript/
+# commit/close, and both ? and :name placeholder styles), so none of the query
+# functions below need to change.
+# ---------------------------------------------------------------------------
+
+IntegrityError: type = sqlite3.IntegrityError
+
+_NAMED_PARAM = re.compile(r":(\w+)")
+
+
+def _to_pg(sql: str, params):
+    """Translate a sqlite3-style statement to psycopg2's %s / %(name)s style."""
+    if isinstance(params, dict):
+        return _NAMED_PARAM.sub(r"%(\1)s", sql), params
+    return sql.replace("?", "%s"), params
+
+
+class _PGConn:
+    """Thin sqlite3-Connection-like wrapper over a psycopg2 connection. Uses a
+    DictCursor so rows support both name and positional access plus dict(row),
+    matching sqlite3.Row. Runs autocommit, so the explicit .commit() calls
+    sprinkled through this module are harmless no-ops."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def _cursor(self):
+        import psycopg2.extras
+        return self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._cursor()
+        q, p = _to_pg(sql, params)
+        cur.execute(q, p)
+        return cur
+
+    def executemany(self, sql, seq):
+        seq = list(seq)
+        if not seq:
+            return
+        cur = self._cursor()
+        q, _ = _to_pg(sql, seq[0])
+        cur.executemany(q, seq)
+        cur.close()
+
+    def executescript(self, script):
+        cur = self._conn.cursor()
+        cur.execute(script)
+        cur.close()
+
+    def commit(self):
+        pass  # autocommit
+
+    def close(self):
+        self._conn.close()
+
+
+def get_conn():
+    url = _database_url()
+    if url:
+        import psycopg2
+        global IntegrityError
+        IntegrityError = psycopg2.IntegrityError
+        conn = psycopg2.connect(url)
+        conn.autocommit = True
+        return _PGConn(conn)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -108,8 +275,12 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
-    conn.executescript(SCHEMA)
+def init_db(conn) -> None:
+    if isinstance(conn, _PGConn):
+        conn.executescript(POSTGRES_SCHEMA)
+        conn.commit()
+        return
+    conn.executescript(SQLITE_SCHEMA)
     _migrate(conn)
     conn.commit()
 
@@ -237,10 +408,10 @@ def save_format_profile(
         """
         INSERT INTO format_profiles
             (signature, label, kind, category_col, amount_col, currency, header_rows, seen_count, last_used)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
         ON CONFLICT(signature) DO UPDATE SET
             seen_count = format_profiles.seen_count + 1,
-            last_used = datetime('now')
+            last_used = CURRENT_TIMESTAMP
         """,
         (signature, label, kind, category_col, amount_col, currency, header_rows),
     )
