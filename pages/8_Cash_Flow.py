@@ -33,7 +33,7 @@ month = st.selectbox("Month", options=list(reversed(months)), key="cashflow_mont
 INFLOW_COLOR, OUTFLOW_COLOR = "#1baf7a", "#e34948"
 
 
-def render_section(section: dict, symbol: str) -> None:
+def render_section(section: dict, symbol: str, section_key: str) -> None:
     c1, c2, c3 = st.columns(3)
     c1.metric("Inflow (money in)", f"{symbol}{section['inflow']:,.0f}")
     c2.metric("Outflow (money out)", f"{symbol}{abs(section['outflow']):,.0f}")
@@ -54,7 +54,7 @@ def render_section(section: dict, symbol: str) -> None:
         height=max(320, 26 * len(df)),
     )
     fig.update_layout(xaxis_title=f"Amount ({symbol})", yaxis_title="", legend_title="")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", key=f"cashflow_chart::{section_key}::{month}")
 
     col1, col2 = st.columns(2)
     inflow_df = (
@@ -83,10 +83,10 @@ cf = calculations.cashflow_for_month(conn, month)
 tab_nis, tab_usd, tab_combined = st.tabs(["₪ Shekels (NIS)", "$ Dollars (USD)", "Combined (NIS-equivalent)"])
 
 with tab_nis:
-    render_section(cf["nis"], "₪")
+    render_section(cf["nis"], "₪", "nis")
 
 with tab_usd:
-    render_section(cf["usd"], "$")
+    render_section(cf["usd"], "$", "usd")
 
 with tab_combined:
     current_rate = db.get_fx_rate(conn, month) or 3.7
@@ -105,4 +105,4 @@ with tab_combined:
             "combined view. Set one above to convert and combine."
         )
     st.caption(f"Dollars converted to shekels at {current_rate:.4f} for {month}.")
-    render_section(cf["combined"], "₪")
+    render_section(cf["combined"], "₪", "combined")
